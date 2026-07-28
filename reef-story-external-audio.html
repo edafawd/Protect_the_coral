@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Reef — A Memory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ocean-deep:   #052224;
+    --ocean-mid:    #0a3d3f;
+    --coral-pink:   #ff7a6b;
+    --coral-gold:   #ffb64d;
+    --coral-teal:   #2fe0b0;
+    --bone:         #eae3d2;
+    --dead-grey:    #726c5c;
+    --sun:          #ffd977;
+    --ink:          #030404;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background:var(--ink);
+    font-family:'Jost',sans-serif;
+    color:var(--bone);
+  }
+  #canvas-wrap{ position:fixed; inset:0; }
+  canvas{ display:block; width:100%; height:100%; }
+
+  /* ---------- letterbox / vignette / grain (always on top of scene) ---------- */
+  #letterbox-top, #letterbox-bottom{
+    position:fixed; left:0; right:0; height:6.5vh; background:var(--ink);
+    z-index:40; pointer-events:none;
+  }
+  #letterbox-top{ top:0; }
+  #letterbox-bottom{ bottom:0; }
+
+  #vignette{
+    position:fixed; inset:0; z-index:30; pointer-events:none;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%);
+    mix-blend-mode:multiply;
+  }
+  #grain{
+    position:fixed; inset:0; z-index:31; pointer-events:none; opacity:0.05;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  /* ---------- heat shimmer overlay (only shown outside) ---------- */
+  #heat-overlay{
+    position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0;
+    transition:opacity 1.2s ease;
+    backdrop-filter: url(#heatwave);
+  }
+  #heat-overlay.active{ opacity:1; }
+
+  /* ---------- fade-to-black curtain ---------- */
+  #curtain{
+    position:fixed; inset:0; z-index:50; background:var(--ink);
+    opacity:1; pointer-events:none; transition:opacity 1.2s ease;
+  }
+  #curtain.clear{ opacity:0; }
+
+  /* ---------- start screen ---------- */
+  #start-screen{
+    position:fixed; inset:0; z-index:60;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, var(--ocean-mid) 0%, var(--ocean-deep) 70%, #01100f 100%);
+    text-align:center; transition:opacity 1.4s ease, visibility 1.4s;
+    padding:0 6vw;
+  }
+  #start-screen.hidden{ opacity:0; visibility:hidden; pointer-events:none; }
+  #start-screen .eyebrow{
+    letter-spacing:0.35em; text-transform:uppercase; font-size:0.72rem;
+    color:var(--coral-teal); margin-bottom:1.3rem; font-weight:400;
+  }
+  #start-screen h1{
+    font-family:'Cormorant Garamond',serif; font-weight:600; font-style:italic;
+    font-size:clamp(2.2rem,6vw,4.2rem); color:var(--bone); line-height:1.15;
+    margin-bottom:1.6rem;
+  }
+  #start-screen p{
+    max-width:460px; font-size:0.95rem; line-height:1.7; color:#c9c3b3;
+    margin-bottom:2.4rem; font-weight:300;
+  }
+  #begin-btn{
+    font-family:'Jost',sans-serif; font-size:0.85rem; letter-spacing:0.18em;
+    text-transform:uppercase; color:var(--ink); background:var(--coral-teal);
+    border:none; padding:0.95rem 2.4rem; border-radius:999px; cursor:pointer;
+    transition:transform 0.25s ease, background 0.25s ease, box-shadow .25s ease;
+    box-shadow:0 0 40px rgba(47,224,176,0.25);
+  }
+  #begin-btn:hover{ transform:translateY(-2px); background:#4dffce; box-shadow:0 0 55px rgba(47,224,176,0.4); }
+
+  /* ---------- title card (intertitle) ---------- */
+  #title-card{
+    position:fixed; inset:0; z-index:45;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; pointer-events:none;
+    opacity:0; transition:opacity 1.1s ease;
+  }
+  #title-card.show{ opacity:1; }
+  #title-card .eyebrow{
+    letter-spacing:0.4em; text-transform:uppercase; font-size:0.68rem;
+    color:var(--coral-gold); margin-bottom:1.1rem; font-weight:400;
+  }
+  #title-card h2{
+    font-family:'Cormorant Garamond',serif; font-weight:600; font-style:italic;
+    font-size:clamp(1.8rem,5vw,3.6rem); color:var(--bone);
+  }
+  #title-card .rule{
+    width:64px; height:1px; background:var(--coral-gold); margin-top:1.3rem; opacity:0.7;
+  }
+
+  /* ---------- subtitle / dialogue caption ---------- */
+  #subtitle{
+    position:fixed; left:50%; bottom:11.5vh; transform:translateX(-50%);
+    z-index:44; max-width:640px; width:88vw; text-align:center;
+    pointer-events:none; opacity:0; transition:opacity 0.8s ease;
+  }
+  #subtitle.show{ opacity:1; }
+  #subtitle .line{
+    font-family:'Jost',sans-serif; font-weight:400; font-style:italic;
+    font-size:clamp(1.05rem,2.4vw,1.5rem); color:var(--bone);
+    line-height:1.5; text-shadow:0 2px 18px rgba(0,0,0,0.8);
+  }
+  #subtitle .label{
+    display:block; letter-spacing:0.3em; text-transform:uppercase;
+    font-family:'Jost',sans-serif; font-style:normal; font-weight:500;
+    font-size:0.62rem; color:var(--coral-teal); margin-bottom:0.6rem; opacity:0.85;
+  }
+
+  /* ---------- skip button ---------- */
+  #skip-btn{
+    position:fixed; right:22px; bottom:calc(6.5vh + 14px); z-index:70;
+    font-family:'Jost',sans-serif; font-size:0.68rem; letter-spacing:0.15em;
+    text-transform:uppercase; color:rgba(234,227,210,0.55); background:transparent;
+    border:1px solid rgba(234,227,210,0.25); padding:0.55rem 1.1rem; border-radius:999px;
+    cursor:pointer; transition:all 0.25s ease; opacity:0;
+  }
+  #skip-btn.show{ opacity:1; }
+  #skip-btn:hover{ color:var(--bone); border-color:rgba(234,227,210,0.6); }
+
+  /* ---------- mute button ---------- */
+  #mute-btn{
+    position:fixed; left:22px; top:calc(6.5vh + 14px); z-index:70;
+    width:38px; height:38px; display:flex; align-items:center; justify-content:center;
+    font-size:0.95rem; color:rgba(234,227,210,0.55); background:transparent;
+    border:1px solid rgba(234,227,210,0.25); border-radius:999px;
+    cursor:pointer; transition:all 0.25s ease; opacity:0;
+  }
+  #mute-btn.show{ opacity:1; }
+  #mute-btn:hover{ color:var(--bone); border-color:rgba(234,227,210,0.6); }
+
+  /* ---------- explore hint ---------- */
+  #explore-hint{
+    position:fixed; left:50%; top:14vh; transform:translateX(-50%);
+    z-index:44; font-size:0.68rem; letter-spacing:0.2em; text-transform:uppercase;
+    color:rgba(234,227,210,0.55); opacity:0; transition:opacity 1s ease; pointer-events:none;
+  }
+  #explore-hint.show{ opacity:1; }
+
+  /* ---------- ending coda ---------- */
+  #ending{
+    position:fixed; inset:0; z-index:65; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    background:var(--ink); opacity:0; pointer-events:none; transition:opacity 2.2s ease;
+    padding:0 8vw;
+  }
+  #ending.show{ opacity:1; pointer-events:auto; }
+  #ending .msg{
+    font-family:'Cormorant Garamond',serif; font-style:italic; font-weight:400;
+    font-size:clamp(1.4rem,3.6vw,2.3rem); color:var(--bone); line-height:1.6;
+    max-width:640px; opacity:0; transition:opacity 2.4s ease;
+  }
+  #ending .msg.show{ opacity:1; }
+  #ending .fact{
+    margin-top:2.6rem; font-family:'Jost',sans-serif; font-weight:300; font-size:0.82rem;
+    letter-spacing:0.02em; color:#9a9384; max-width:480px; line-height:1.8;
+    opacity:0; transition:opacity 2s ease 0.4s;
+  }
+  #ending .fact.show{ opacity:1; }
+  #replay-btn{
+    margin-top:2.8rem; font-family:'Jost',sans-serif; font-size:0.72rem; letter-spacing:0.18em;
+    text-transform:uppercase; color:#9a9384; background:transparent; border:1px solid rgba(154,147,132,0.4);
+    padding:0.8rem 2rem; border-radius:999px; cursor:pointer; opacity:0; transition:all 2s ease 0.8s;
+  }
+  #replay-btn.show{ opacity:1; }
+  #replay-btn:hover{ color:var(--bone); border-color:var(--bone); }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+
+<svg width="0" height="0" style="position:absolute">
+  <filter id="heatwave">
+    <feTurbulence id="heatTurb" type="turbulence" baseFrequency="0.01 0.06" numOctaves="2" seed="7" result="turb">
+      <animate attributeName="baseFrequency" dur="6s" values="0.01 0.06;0.012 0.08;0.01 0.06" repeatCount="indefinite"/>
+    </feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="turb" scale="14"/>
+  </filter>
+</svg>
+
+<div id="heat-overlay"></div>
+<div id="vignette"></div>
+<div id="grain"></div>
+<div id="letterbox-top"></div>
+<div id="letterbox-bottom"></div>
+
+<div id="explore-hint">drag to look around · exploring memory</div>
+
+<div id="subtitle">
+  <span class="label" id="subtitle-label" style="display:none;"></span>
+  <span class="line" id="subtitle-line"></span>
+</div>
+
+<div id="title-card">
+  <div class="eyebrow" id="title-eyebrow"></div>
+  <h2 id="title-main"></h2>
+  <div class="rule"></div>
+</div>
+
+<button id="skip-btn">Skip story</button>
+<button id="mute-btn" title="Toggle music">♪</button>
+
+<div id="curtain"></div>
+
+<div id="start-screen">
+  <div class="eyebrow">A short story</div>
+  <h1>The Reef</h1>
+  <p>Close your eyes. You are five years old, and the ocean has just shown you something you will never forget.</p>
+  <button id="begin-btn">Begin the memory</button>
+</div>
+
+<audio id="bg-music" loop preload="auto"><source src="reef_story_theme.mp3" type="audio/mpeg"></audio>
+<div id="ending">
+  <div class="msg" id="ending-msg-1">"&nbsp;...you see.<br>This is what is happening to the reef.&nbsp;"</div>
+  <div class="fact" id="ending-fact">Over the last thirty years, warming and acidifying oceans have bleached and killed vast stretches of coral reef around the world. What took thousands of years to grow can disappear in a single hot summer.</div>
+  <button id="replay-btn">Watch it again</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+function lerp(a,b,t){ return a + (b-a)*t; }
+function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function rand(min,max){ return Math.random()*(max-min)+min; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+// seeded PRNG so the healthy reef & dying reef share identical coral placement
+function makeSeededRandom(seed){
+  let s = seed;
+  return function(){
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+
+/* ============================================================
+   DOM REFS
+   ============================================================ */
+const curtain = document.getElementById('curtain');
+const titleCard = document.getElementById('title-card');
+const titleEyebrow = document.getElementById('title-eyebrow');
+const titleMain = document.getElementById('title-main');
+const subtitle = document.getElementById('subtitle');
+const subtitleLine = document.getElementById('subtitle-line');
+const subtitleLabel = document.getElementById('subtitle-label');
+const exploreHint = document.getElementById('explore-hint');
+const heatOverlay = document.getElementById('heat-overlay');
+const skipBtn = document.getElementById('skip-btn');
+const startScreen = document.getElementById('start-screen');
+const beginBtn = document.getElementById('begin-btn');
+const endingEl = document.getElementById('ending');
+
+/* ============================================================
+   THREE.JS CORE SETUP
+   ============================================================ */
+const wrap = document.getElementById('canvas-wrap');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
+camera.position.set(0, 2, 10);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.enablePan = false;
+controls.minDistance = 2;
+controls.maxDistance = 40;
+controls.enabled = false;
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ============================================================
+   SHARED PROCEDURAL TEXTURES
+   ============================================================ */
+function sandTexture(hue, dark){
+  const c = document.createElement('canvas'); c.width=c.height=256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = dark ? '#3a382c' : '#cbb98a';
+  ctx.fillRect(0,0,256,256);
+  for(let i=0;i<1400;i++){
+    const x=Math.random()*256, y=Math.random()*256, r=Math.random()*1.6;
+    ctx.fillStyle = `rgba(${dark?'20,20,15':'255,240,200'},${Math.random()*0.25})`;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(8,8);
+  return tex;
+}
+
+function photoTexture(paletteVibrant, caption){
+  const c = document.createElement('canvas'); c.width=512; c.height=640;
+  const ctx = c.getContext('2d');
+  // polaroid paper
+  ctx.fillStyle = '#efe6d2'; ctx.fillRect(0,0,512,640);
+  // photo area
+  const px=28, py=28, pw=512-56, ph=460;
+  ctx.fillStyle = '#0a3d3f'; ctx.fillRect(px,py,pw,ph);
+  for(let i=0;i<26;i++){
+    ctx.beginPath();
+    const x = rand(px,px+pw), y = rand(py,py+ph), r = rand(20,70);
+    ctx.fillStyle = pick(paletteVibrant);
+    ctx.globalAlpha = 0.5;
+    ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // vignette + sepia wash for age
+  const grad = ctx.createRadialGradient(256,py+ph/2,60,256,py+ph/2,340);
+  grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(20,10,0,0.55)');
+  ctx.fillStyle = grad; ctx.fillRect(px,py,pw,ph);
+  ctx.fillStyle = 'rgba(255,220,160,0.12)'; ctx.fillRect(px,py,pw,ph);
+  // caption
+  ctx.fillStyle = '#3c352a';
+  ctx.font = 'italic 28px Georgia';
+  ctx.textAlign = 'center';
+  ctx.fillText(caption, 256, 600);
+  const tex = new THREE.CanvasTexture(c);
+  return tex;
+}
+
+function waterSurfaceTexture(){
+  const c = document.createElement('canvas'); c.width=c.height=256;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,0,256);
+  grad.addColorStop(0,'#0f6b86');
+  grad.addColorStop(1,'#0a3d52');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,256,256);
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  for(let i=0;i<40;i++){
+    ctx.lineWidth = rand(0.5,1.6);
+    ctx.beginPath();
+    const y = rand(0,256);
+    ctx.moveTo(0,y);
+    ctx.bezierCurveTo(64,y+rand(-8,8),192,y+rand(-8,8),256,y);
+    ctx.stroke();
+  }
+  for(let i=0;i<200;i++){
+    ctx.fillStyle = `rgba(255,255,255,${rand(0.05,0.22)})`;
+    ctx.beginPath(); ctx.arc(rand(0,256),rand(0,256),rand(0.4,1.4),0,Math.PI*2); ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(10,10);
+  return tex;
+}
+
+function sunTexture(){
+  const c = document.createElement('canvas'); c.width=c.height=256;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(128,128,0,128,128,128);
+  grad.addColorStop(0,'rgba(255,244,214,1)');
+  grad.addColorStop(0.25,'rgba(255,214,120,0.9)');
+  grad.addColorStop(1,'rgba(255,180,80,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,256,256);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ============================================================
+   CORAL FIELD  (shared layout, two "skins": healthy / dying)
+   ============================================================ */
+const CORAL_COUNT = 42;
+const coralLayout = (function(){
+  const rnd = makeSeededRandom(1337);
+  const layout = [];
+  for(let i=0;i<CORAL_COUNT;i++){
+    const angle = rnd()*Math.PI*2;
+    const radius = rnd()*15 + 2;
+    layout.push({
+      x: Math.cos(angle)*radius,
+      z: Math.sin(angle)*radius,
+      y: -2.4,
+      scale: rnd()*1.3 + 0.6,
+      rot: rnd()*Math.PI*2,
+      type: Math.floor(rnd()*4),
+      colorSeed: rnd()
+    });
+  }
+  return layout;
+})();
+
+const VIBRANT_COLORS = [0xff7a6b, 0xffb64d, 0x2fe0b0, 0x4fc3f7, 0xff5da2, 0xffe066];
+const DEAD_COLORS    = [0x8f897a, 0x726c5c, 0x5c5748, 0xa79f8c, 0x6d6858];
+
+function makeBranchCoral(color, roughness){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness:0.05 });
+  const branches = 5 + Math.floor(Math.random()*4);
+  for(let i=0;i<branches;i++){
+    const h = rand(1.2,2.4);
+    const geo = new THREE.CylinderGeometry(0.06,0.16,h,6);
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(rand(-0.3,0.3), h/2, rand(-0.3,0.3));
+    m.rotation.set(rand(-0.4,0.4), rand(0,Math.PI*2), rand(-0.4,0.4));
+    g.add(m);
+  }
+  return g;
+}
+function makeBrainCoral(color, roughness){
+  const geo = new THREE.IcosahedronGeometry(0.9, 1);
+  const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness:0.05, flatShading:true });
+  const m = new THREE.Mesh(geo, mat);
+  m.scale.y = 0.6;
+  return m;
+}
+function makeFanCoral(color, roughness){
+  const geo = new THREE.TorusGeometry(0.9, 0.12, 6, 24, Math.PI*1.4);
+  const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness:0.05, side:THREE.DoubleSide });
+  const m = new THREE.Mesh(geo, mat);
+  m.rotation.x = Math.PI/2.4;
+  return m;
+}
+function makeSpikeCoral(color, roughness){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness:0.05, flatShading:true });
+  const spikes = 4 + Math.floor(Math.random()*4);
+  for(let i=0;i<spikes;i++){
+    const h = rand(0.8,1.8);
+    const geo = new THREE.ConeGeometry(0.22,h,5);
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(rand(-0.4,0.4), h/2, rand(-0.4,0.4));
+    g.add(m);
+  }
+  return g;
+}
+
+function buildReef(healthy){
+  const group = new THREE.Group();
+  const palette = healthy ? VIBRANT_COLORS : DEAD_COLORS;
+  const roughness = healthy ? 0.65 : 0.95;
+
+  // sea floor
+  const floorTex = sandTexture(healthy, !healthy);
+  const floorGeo = new THREE.CircleGeometry(40, 48);
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness:1 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = -2.5;
+  group.add(floor);
+
+  coralLayout.forEach(c => {
+    const color = healthy ? palette[Math.floor(c.colorSeed*palette.length)] : pick(DEAD_COLORS);
+    let mesh;
+    if(c.type===0) mesh = makeBranchCoral(color, roughness);
+    else if(c.type===1) mesh = makeBrainCoral(color, roughness);
+    else if(c.type===2) mesh = makeFanCoral(color, roughness);
+    else mesh = makeSpikeCoral(color, roughness);
+    mesh.position.set(c.x, c.y, c.z);
+    mesh.rotation.y = c.rot;
+    mesh.scale.setScalar(c.scale * (healthy?1:0.85));
+    if(!healthy) mesh.rotation.z = rand(-0.15,0.2); // slouched, dying posture
+    group.add(mesh);
+  });
+
+  return group;
+}
+
+/* ============================================================
+   FISH  (only in the healthy reef)
+   ============================================================ */
+function makeFishMesh(color){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness:0.4, metalness:0.15 });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.16,0.5,6), bodyMat);
+  body.rotation.z = Math.PI/2;
+  g.add(body);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14,0.22,4), bodyMat);
+  tail.position.x = -0.32;
+  tail.rotation.z = -Math.PI/2;
+  g.add(tail);
+  g.userData.tail = tail;
+  return g;
+}
+
+const fishGroup = new THREE.Group();
+const fishData = [];
+const FISH_COLORS = [0xffd166, 0xff6b6b, 0x4fc3f7, 0x8affc1, 0xff9ecb, 0xffffff];
+for(let i=0;i<26;i++){
+  const mesh = makeFishMesh(pick(FISH_COLORS));
+  const d = {
+    mesh,
+    radius: rand(2,12),
+    height: rand(-1.5,2.5),
+    speed: rand(0.25,0.6),
+    phase: rand(0,Math.PI*2),
+    dir: Math.random()<0.5?1:-1,
+    bob: rand(0.3,0.9)
+  };
+  fishData.push(d);
+  fishGroup.add(mesh);
+}
+
+/* marine snow / debris used in dead reef */
+const debrisGeo = new THREE.BufferGeometry();
+const DEBRIS_COUNT = 180;
+const debrisPos = new Float32Array(DEBRIS_COUNT*3);
+for(let i=0;i<DEBRIS_COUNT;i++){
+  debrisPos[i*3] = rand(-16,16);
+  debrisPos[i*3+1] = rand(-2,8);
+  debrisPos[i*3+2] = rand(-16,16);
+}
+debrisGeo.setAttribute('position', new THREE.BufferAttribute(debrisPos,3));
+const debrisMat = new THREE.PointsMaterial({ color:0x9a917a, size:0.06, transparent:true, opacity:0.6 });
+const debris = new THREE.Points(debrisGeo, debrisMat);
+
+/* bubbles used in healthy reef */
+const bubbleGeo = new THREE.BufferGeometry();
+const BUBBLE_COUNT = 90;
+const bubblePos = new Float32Array(BUBBLE_COUNT*3);
+for(let i=0;i<BUBBLE_COUNT;i++){
+  bubblePos[i*3] = rand(-14,14);
+  bubblePos[i*3+1] = rand(-2,6);
+  bubblePos[i*3+2] = rand(-14,14);
+}
+bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePos,3));
+const bubbleMat = new THREE.PointsMaterial({ color:0xdff7f0, size:0.05, transparent:true, opacity:0.5 });
+const bubbles = new THREE.Points(bubbleGeo, bubbleMat);
+
+/* ============================================================
+   LIGHTING RIGS
+   ============================================================ */
+const hemiHealthy = new THREE.HemisphereLight(0x8fe8d8, 0x1a3a2a, 0.9);
+const sunHealthy = new THREE.DirectionalLight(0xdff7ff, 1.1);
+sunHealthy.position.set(5,10,4);
+
+const hemiDead = new THREE.HemisphereLight(0x5c6a4a, 0x1a1a12, 0.45);
+const sunDead = new THREE.DirectionalLight(0xb9ad84, 0.4);
+sunDead.position.set(3,8,2);
+
+/* ============================================================
+   SCENE GROUPS (built once, toggled)
+   ============================================================ */
+const reefHealthy = buildReef(true);
+const reefDead = buildReef(false);
+reefDead.visible = false;
+scene.add(reefHealthy, reefDead, fishGroup, bubbles, debris);
+debris.visible = false;
+scene.fog = new THREE.FogExp2(0x0a3d3f, 0.035);
+scene.add(hemiHealthy, sunHealthy);
+
+/* photo scene objects (memory beat) */
+const photoGroup = new THREE.Group();
+const photoCaptions = ['age five','nine years ago','the first dive'];
+const photoMeshes = [];
+photoCaptions.forEach((cap, i) => {
+  const tex = photoTexture(VIBRANT_COLORS, cap);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true });
+  const geo = new THREE.PlaneGeometry(2.4, 3.0);
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set((i-1)*3.2, rand(-0.3,0.3), -i*1.4);
+  m.rotation.y = rand(-0.15,0.15);
+  m.rotation.z = rand(-0.08,0.08);
+  photoGroup.add(m);
+  photoMeshes.push(m);
+});
+photoGroup.visible = false;
+scene.add(photoGroup);
+
+/* outdoor sky scene */
+const skyGroup = new THREE.Group();
+const skyGeo = new THREE.SphereGeometry(60, 24, 16);
+const skyMat = new THREE.MeshBasicMaterial({ color:0x8fd4e8, side:THREE.BackSide });
+const sky = new THREE.Mesh(skyGeo, skyMat);
+skyGroup.add(sky);
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map:sunTexture(), transparent:true, depthWrite:false }));
+sunSprite.scale.set(18,18,1);
+sunSprite.position.set(10,14,-30);
+skyGroup.add(sunSprite);
+const waterTex = waterSurfaceTexture();
+const groundGeo = new THREE.CircleGeometry(60,48);
+const groundMat = new THREE.MeshStandardMaterial({ map:waterTex, color:0xffffff, roughness:0.35, metalness:0.2 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -2.5;
+skyGroup.add(ground);
+const outdoorHemi = new THREE.HemisphereLight(0xffffff, 0x0a3d52, 1.0);
+const outdoorSun = new THREE.DirectionalLight(0xfff3d6, 1.3);
+outdoorSun.position.set(10,14,-10);
+skyGroup.add(outdoorHemi, outdoorSun);
+skyGroup.visible = false;
+scene.add(skyGroup);
+
+/* ============================================================
+   BACKGROUND MUSIC (real recorded track, embedded as base64 mp3)
+   ============================================================ */
+const bgMusic = document.getElementById('bg-music');
+let muted = false;
+let musicFadeRAF = null;
+
+const SCENE_VOLUME = {
+  reef:    0.55,
+  memory:  0.40,
+  outside: 0.32,
+  dead:    0.46,
+  ending:  0.62,
+  off:     0
+};
+
+function fadeMusicVolume(target, dur){
+  if(!bgMusic) return;
+  dur = dur || 2.5;
+  const start = bgMusic.volume;
+  const t0 = performance.now();
+  if(musicFadeRAF) cancelAnimationFrame(musicFadeRAF);
+  function step(now){
+    const p = Math.min((now-t0)/(dur*1000), 1);
+    bgMusic.volume = start + (target-start)*p;
+    if(p<1) musicFadeRAF = requestAnimationFrame(step);
+  }
+  musicFadeRAF = requestAnimationFrame(step);
+}
+
+// kept the same name so the story timeline below doesn't need to change
+function setAudioScene(name, dur){
+  const vol = SCENE_VOLUME[name];
+  if(vol === undefined) return;
+  fadeMusicVolume(vol, dur);
+}
+
+function initAudio(){
+  if(!bgMusic) return;
+  bgMusic.volume = 0;
+  const p = bgMusic.play();
+  if(p && p.catch) p.catch(()=>{ /* will retry on next user gesture if blocked */ });
+}
+
+function toggleMute(){
+  if(!bgMusic) return;
+  muted = !muted;
+  bgMusic.muted = muted;
+  document.getElementById('mute-btn').textContent = muted ? '✕' : '♪';
+}
+
+/* ============================================================
+   ANIMATION LOOP
+   ============================================================ */
+let clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  controls.update();
+
+  // fish swim
+  fishData.forEach(d => {
+    const ang = t*d.speed*d.dir + d.phase;
+    const x = Math.cos(ang)*d.radius;
+    const z = Math.sin(ang)*d.radius;
+    const y = d.height + Math.sin(t*1.4+d.phase)*0.25;
+    const prevX = Math.cos(ang-0.02*d.dir)*d.radius;
+    const prevZ = Math.sin(ang-0.02*d.dir)*d.radius;
+    d.mesh.position.set(x,y,z);
+    d.mesh.lookAt(prevX, y, prevZ);
+    if(d.mesh.userData.tail) d.mesh.userData.tail.rotation.y = Math.sin(t*8+d.phase)*0.5;
+  });
+
+  // bubbles drift up
+  const bp = bubbles.geometry.attributes.position;
+  for(let i=0;i<BUBBLE_COUNT;i++){
+    let y = bp.getY(i) + 0.01;
+    if(y>7) y=-2;
+    bp.setY(i,y);
+  }
+  bp.needsUpdate = true;
+
+  // debris drift down slowly
+  if(debris.visible){
+    const dp = debris.geometry.attributes.position;
+    for(let i=0;i<DEBRIS_COUNT;i++){
+      let y = dp.getY(i) - 0.003;
+      if(y<-2) y=8;
+      dp.setX(i, dp.getX(i) + Math.sin(t+i)*0.001);
+      dp.setY(i,y);
+    }
+    dp.needsUpdate = true;
+  }
+
+  // shimmering open water surface (outdoor beat)
+  if(skyGroup.visible){
+    waterTex.offset.x = t*0.015;
+    waterTex.offset.y = Math.sin(t*0.3)*0.01;
+    sunSprite.material.rotation = t*0.02;
+  }
+
+  // light flicker (healthy = lively caustics, dead = weak murk)
+  sunHealthy.intensity = 1.0 + Math.sin(t*2.3)*0.12;
+  sunDead.intensity = 0.35 + Math.sin(t*0.6)*0.05;
+
+  // gentle photo bob
+  if(photoGroup.visible){
+    photoMeshes.forEach((m,i)=>{ m.position.y += Math.sin(t*0.6+i)*0.0006; });
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ============================================================
+   CAMERA TWEEN HELPER
+   ============================================================ */
+function moveCamera(toPos, toLook, duration){
+  return new Promise(resolve=>{
+    const fromPos = camera.position.clone();
+    const fromLook = controls.target.clone();
+    const start = performance.now();
+    function step(now){
+      const t = Math.min((now-start)/duration, 1);
+      const e = easeInOut(t);
+      camera.position.lerpVectors(fromPos, toPos, e);
+      controls.target.lerpVectors(fromLook, toLook, e);
+      camera.lookAt(controls.target);
+      if(t<1) requestAnimationFrame(step); else resolve();
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+/* ============================================================
+   NARRATIVE HELPERS (UI)
+   ============================================================ */
+async function fadeToBlack(dur=1200){
+  curtain.style.transitionDuration = dur+'ms';
+  curtain.classList.remove('clear');
+  await sleep(dur+50);
+}
+async function fadeFromBlack(dur=1200){
+  curtain.style.transitionDuration = dur+'ms';
+  curtain.classList.add('clear');
+  await sleep(dur+50);
+}
+async function showTitle(eyebrow, main, hold=2600){
+  titleEyebrow.textContent = eyebrow;
+  titleMain.textContent = main;
+  titleCard.classList.add('show');
+  await sleep(hold);
+  titleCard.classList.remove('show');
+  await sleep(900);
+}
+async function say(text, label, hold=3400){
+  subtitleLabel.style.display = label ? 'block':'none';
+  subtitleLabel.textContent = label || '';
+  subtitleLine.textContent = text;
+  subtitle.classList.add('show');
+  await sleep(hold);
+  subtitle.classList.remove('show');
+  await sleep(500);
+}
+function hideSubtitleNow(){ subtitle.classList.remove('show'); }
+
+/* ============================================================
+   STORY TIMELINE
+   ============================================================ */
+let skipRequested = false;
+skipBtn.addEventListener('click', ()=>{ skipRequested = true; endStoryImmediately(); });
+
+function endStoryImmediately(){
+  curtain.classList.remove('clear');
+  Object.assign(curtain.style,{transitionDuration:'600ms'});
+  setTimeout(()=>{
+    reefHealthy.visible=false; reefDead.visible=false; photoGroup.visible=false; skyGroup.visible=false;
+    heatOverlay.classList.remove('active');
+    controls.enabled=false;
+    setAudioScene('off', 0.6);
+    showEnding();
+  },650);
+}
+
+async function showEnding(){
+  skipBtn.classList.remove('show');
+  exploreHint.classList.remove('show');
+  setAudioScene('ending', 5.5);
+  await sleep(300);
+  endingEl.classList.add('show');
+  await sleep(1400);
+  document.getElementById('ending-msg-1').classList.add('show');
+  await sleep(2600);
+  document.getElementById('ending-fact').classList.add('show');
+  await sleep(1600);
+  document.getElementById('replay-btn').classList.add('show');
+}
+
+document.getElementById('replay-btn').addEventListener('click', ()=> location.reload());
+
+async function runStory(){
+  skipBtn.classList.add('show');
+
+  /* ---------------- BEAT 1 : childhood dive ---------------- */
+  camera.position.set(0, 1, 9);
+  controls.target.set(0,0,0);
+  camera.lookAt(controls.target);
+  await fadeFromBlack(1600);
+  setAudioScene('reef', 3);
+
+  say('Wow... it\u2019s so beautiful.', null, 3200);
+  await sleep(2600);
+  say('I hope nothing happens to it.', null, 3800);
+
+  controls.enabled = true;
+  exploreHint.classList.add('show');
+  // slow scripted drift alongside free user orbit
+  moveCamera(new THREE.Vector3(6,1.5,4), new THREE.Vector3(0,-0.5,0), 9000);
+  await sleep(9500);
+  moveCamera(new THREE.Vector3(-5,0.5,6), new THREE.Vector3(1,-0.5,-2), 6000);
+  await sleep(6200);
+
+  controls.enabled = false;
+  exploreHint.classList.remove('show');
+  hideSubtitleNow();
+  if(skipRequested) return;
+  await fadeToBlack(1400);
+
+  /* ---------------- BEAT 2 : title card ---------------- */
+  reefHealthy.visible = false;
+  await showTitle('Thirty years later', '...', 2600);
+  if(skipRequested) return;
+
+  /* ---------------- BEAT 3 : memory / photographs ---------------- */
+  photoGroup.visible = true;
+  scene.fog = new THREE.FogExp2(0x02100f, 0.06);
+  hemiHealthy.intensity = 0.15; sunHealthy.intensity = 0.1;
+  bubbles.visible = false;
+  camera.position.set(0,0,4);
+  controls.target.set(0,0,-1.4);
+  camera.lookAt(controls.target);
+  await fadeFromBlack(1400);
+  setAudioScene('memory', 2.5);
+  say('Nine years ago.', 'a memory', 2600);
+  await sleep(1000);
+  await moveCamera(new THREE.Vector3(-3.2,0.1,1.6), new THREE.Vector3(-3.2,0,-1.4), 4200);
+  await sleep(600);
+  say('Hmm... maybe I should go there.', null, 3600);
+  await sleep(3200);
+  if(skipRequested) return;
+  await fadeToBlack(1400);
+  photoGroup.visible = false;
+
+  /* ---------------- BEAT 3b : forty years later ---------------- */
+  await showTitle('Forty years later', '...', 2600);
+  if(skipRequested) return;
+
+  /* ---------------- BEAT 4 : stepping outside, the heat ---------------- */
+  skyGroup.visible = true;
+  fishGroup.visible = false;
+  bubbles.visible = false;
+  camera.position.set(0,1.2,3);
+  controls.target.set(0,1.0,-4);
+  camera.lookAt(controls.target);
+  scene.fog = null;
+  await fadeFromBlack(1400);
+  heatOverlay.classList.add('active');
+  setAudioScene('outside', 2.5);
+  say('Man! It\u2019s hot out here...', null, 3200);
+  await sleep(2200);
+  say('Nothing but water and sun out here now.', null, 3400);
+  await sleep(3200);
+  if(skipRequested) return;
+  heatOverlay.classList.remove('active');
+  await fadeToBlack(1200);
+  skyGroup.visible = false;
+
+  /* ---------------- BEAT 5 : the dive back in - the dead reef ---------------- */
+  reefDead.visible = true;
+  debris.visible = true;
+  bubbles.visible = false;
+  fishGroup.visible = false;
+  scene.remove(hemiHealthy, sunHealthy);
+  scene.add(hemiDead, sunDead);
+  scene.fog = new THREE.FogExp2(0x3a3626, 0.05);
+  camera.position.set(0,1,8);
+  controls.target.set(0,-0.5,0);
+  camera.lookAt(controls.target);
+  await fadeFromBlack(1600);
+  setAudioScene('dead', 3);
+  controls.enabled = true;
+  exploreHint.classList.add('show');
+  say('This looks terrible... what happened?!', null, 4200);
+  moveCamera(new THREE.Vector3(4,0,3), new THREE.Vector3(0,-1,0), 8000);
+  await sleep(8300);
+  controls.enabled = false;
+  exploreHint.classList.remove('show');
+  hideSubtitleNow();
+  if(skipRequested) return;
+
+  /* ---------------- BEAT 6 : sad exit ---------------- */
+  await moveCamera(new THREE.Vector3(0,4,10), new THREE.Vector3(0,0,0), 3600);
+  say('That was the first place I ever went... when I was five.', null, 4600);
+  await sleep(4200);
+  if(skipRequested) return;
+  await fadeToBlack(2200);
+
+  /* ---------------- BEAT 7 : ending ---------------- */
+  reefDead.visible = false; debris.visible = false;
+  await showEnding();
+}
+
+/* ============================================================
+   BOOTSTRAP
+   ============================================================ */
+document.getElementById('mute-btn').addEventListener('click', toggleMute);
+
+beginBtn.addEventListener('click', async () => {
+  initAudio();
+  document.getElementById('mute-btn').classList.add('show');
+  startScreen.classList.add('hidden');
+  await sleep(400);
+  runStory();
+});
+
+})();
+</script>
+</body>
+</html>
